@@ -1,15 +1,17 @@
 package ui
 
 import (
-	"os"
-	"sync"
-
+	"fmt"
 	"github.com/derailed/k9s/internal/client"
 	"github.com/derailed/k9s/internal/config"
 	"github.com/derailed/k9s/internal/model"
 	"github.com/derailed/tcell/v2"
 	"github.com/derailed/tview"
 	"github.com/rs/zerolog/log"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
 )
 
 // App represents an application.
@@ -148,6 +150,7 @@ func (a *App) bindKeys() {
 		tcell.KeyCtrlC: NewKeyAction("Quit", a.quitCmd, false),
 		tcell.KeyCtrlU: NewSharedKeyAction("Clear Filter", a.clearCmd, false),
 		tcell.KeyCtrlQ: NewSharedKeyAction("Clear Filter", a.clearCmd, false),
+		tcell.KeyCtrlZ: NewKeyAction("Suspend", a.suspendCmd, false),
 	}
 }
 
@@ -199,6 +202,35 @@ func (a *App) quitCmd(evt *tcell.EventKey) *tcell.EventKey {
 	}
 
 	// overwrite the default ctrl-c behavior of tview
+	return nil
+}
+
+func (a *App) suspendCmd(key *tcell.EventKey) *tcell.EventKey {
+
+	a.Suspend(func() {
+		// 发起 SIGTSTP 信号
+		p, err := os.FindProcess(os.Getpid())
+		if err != nil {
+			fmt.Println("Failed to find process:", err)
+			return
+		}
+		err = p.Signal(syscall.SIGTSTP)
+		if err != nil {
+			fmt.Println("Failed to send SIGTSTP signal:", err)
+			return
+		}
+
+		// 创建一个通道来接收操作系统信号
+		sigChan := make(chan os.Signal, 1)
+
+		// 监听 SIGTSTP 信号
+		signal.Notify(sigChan, syscall.SIGCONT)
+
+		// 等待 SIGTSTP 信号
+		<-sigChan
+		fmt.Println("Received SIGTSTP signal. Program is being suspended...")
+	})
+
 	return nil
 }
 
